@@ -1,0 +1,17 @@
+project_id = "ibg-v2"
+
+[api]
+enabled = true
+
+[db]
+major_version = 15
+
+[db.migrations]
+enabled = true
+
+[db.seed]
+enabled = false
+
+[auth]
+enabled = true
+enable_signup = false

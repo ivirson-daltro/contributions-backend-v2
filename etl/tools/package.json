@@ -1,0 +1,14 @@
+{
+  "name": "ibg-v2-etl-tools",
+  "private": true,
+  "type": "module",
+  "description": "Scripts de apoio à migração v1 -> banco novo (usuários e anexos). Node >= 20.",
+  "scripts": {
+    "migrate-users": "node migrate-users.mjs",
+    "copy-attachments": "node copy-attachments.mjs"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.45.0",
+    "pg": "^8.12.0"
+  }
+}
