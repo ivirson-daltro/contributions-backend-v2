@@ -22,6 +22,14 @@ O guard global valida `Authorization: Bearer <access-token>` com a JWKS do Supab
 - `corepack pnpm typecheck`
 - `corepack pnpm lint`
 
+## Contribuicoes
+
+`GET /v1/contributions` lista lancamentos com filtros `q`, `memberId`, `typeId`, `methodId`, `from`, `to`, `status`, paginacao e ordenacao. Sem `from` e `to`, retorna o mes vigente no fuso do tenant; ao informar uma ou ambas as datas, usa somente os limites enviados (inclusivos). `meta.totals` considera todas as contribuicoes ativas do filtro, nao apenas a pagina. `POST /v1/contributions` registra uma contribuicao e exige `Idempotency-Key`; o tipo pode exigir membro, e data futura depende da configuracao do tenant. Para preencher o formulario, use `GET /v1/catalogs/contribution-types`, `GET /v1/catalogs/payment-methods` (ambos paginados e somente ativos) e `GET /v1/members/lookup?q=` (ate 20 membros ativos). Essas rotas exigem JWT, `X-Tenant-Id` e as permissoes correspondentes. Nesta etapa, anexos, criacao rapida de membro, edicao e cancelamento ainda nao estao disponiveis; `attachmentIds`, se enviado, deve ser vazio. Consulte `/docs` para detalhes.
+
+`GET /v1/contributions/report?from=2026-11-01&to=2026-11-30` retorna diretamente um PDF das contribuicoes ativas, agrupadas por meio de pagamento, com totais por classificacao historica. Os nomes de tipos e meios sao os atuais; as classificacoes sao as registradas no lancamento. As duas datas sao obrigatorias e inclusivas; o intervalo maximo e de 366 dias. Exige JWT, `X-Tenant-Id` e a permissao `contributions-report:generate` (sujeita ao MFA configurado para o perfil).
+
+O cabecalho do PDF usa `assets/logo.png`; o build copia a imagem para `dist/assets/logo.png`, que deve acompanhar a aplicacao na implantacao. Ao final, o resumo apresenta entradas por classificacao do meio de pagamento, contribuicoes por categoria e destinacoes para construcao e missoes, seguido de espacos para assinatura do 1º e 2º tesoureiros e de cinco membros do conselho fiscal. Cabecalho, layout, resumo, assinaturas e geracao do PDF sao compartilhados em `src/common/pdf/report-layout.ts` para outros relatorios.
+
 ## Banco de dados
 
 O esquema final esta em `supabase/migrations/`. As dez migrations da especificacao 2.1 foram preservadas porque ja podem estar aplicadas; os deltas 2.2 e de consulta de convites foram adicionados como `20261112150000_monthly_cash_on_hand.sql` e `20261112160000_invitation_account_exists.sql`. Assim, este repositorio tem 12 arquivos de migration e tanto um banco novo quanto o banco remoto atualizado chegam ao mesmo esquema. O projeto Supabase local usa a versao PostgreSQL definida em `supabase/config.toml` e cadastro publico desabilitado. A CLI 3.1.0 rejeita `major_version = 16`; o valor atual e 15, padrao aceito pela CLI e compativel com o requisito PostgreSQL >= 15. Ajuste-o para corresponder ao servidor remoto se a versao do projeto for diferente (`SHOW server_version;`).

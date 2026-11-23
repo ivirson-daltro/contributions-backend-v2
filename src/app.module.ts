@@ -8,6 +8,7 @@ import { TenantModule } from "./common/tenant/tenant.module";
 import { AuthModule as AuthFeatureModule } from "./modules/auth/auth.module";
 import { HealthModule } from "./modules/health/health.module";
 import { DashboardModule } from "./modules/dashboard/dashboard.module";
+import { ContributionsModule } from "./modules/contributions/contributions.module";
 import { PlatformModule } from "./modules/platform/platform.module";
 
 @Module({
@@ -19,6 +20,7 @@ import { PlatformModule } from "./modules/platform/platform.module";
     AuthFeatureModule,
     PlatformModule,
     DashboardModule,
+    ContributionsModule,
     HealthModule,
     ThrottlerModule.forRoot([{ ttl: 60_000, limit: 100 }]),
   ],

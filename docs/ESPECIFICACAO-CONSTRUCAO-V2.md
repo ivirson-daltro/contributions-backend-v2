@@ -598,7 +598,7 @@ Observação de dados: a API usa `gender`; o campo `genre` da v1 é copiado para
 **Back-end**
 | Método | Rota | Permissão | Descrição |
 |---|---|---|---|
-| GET | `/contributions` | `contributions:read` | Filtros `memberId, typeId, methodId, from, to, status=ACTIVE|VOIDED|ALL`, `page`, `sort=date|amount|member`. Item: `{ id, occurredOn, amount, member?:{id,name}, type:{id,description,category}, method:{id,description,kind}, observation, status, attachmentsCount, version }`. `meta.totals = { amount, count }` calculado sobre **todo o filtro**, apenas `ACTIVE` |
+| GET | `/contributions` | `contributions:read` | Filtros `memberId, typeId, methodId, from, to, status=ACTIVE|VOIDED|ALL`, `page`, `sort=date|amount|member`. Sem `from` e `to`, filtra o mês vigente no fuso do tenant; com qualquer uma das datas, usa apenas os limites informados (inclusivos). Item: `{ id, occurredOn, amount, member?:{id,name}, type:{id,description,category}, method:{id,description,kind}, observation, status, attachmentsCount, version }`. `meta.totals = { amount, count }` calculado sobre **todo o filtro**, apenas `ACTIVE` |
 | GET | `/contributions/:id` | `contributions:read` | Com anexos |
 | POST | `/contributions` | `contributions:write` | `Idempotency-Key` obrigatório → `201` |
 | PUT | `/contributions/:id` | `contributions:write` | Corpo + `version` |
@@ -622,9 +622,9 @@ Transação do `POST`: validar → pré-checar mês fechado (mensagem amigável)
 - **RN-9.1** Intervalo livre (`from`, `to`, inclusivos, em data de negócio), máx. 366 dias; `from ≤ to`.
 - **RN-9.2** Conteúdo: cabeçalho (nome e documento da igreja, período, emissor, gerado em no fuso do tenant); tabela (data, membro, tipo, meio, valor); **total geral**; totais **por `kind`** do meio (`PIX, CASH, CARD, TRANSFER, CHECK, OTHER`) mais a linha “Pix × demais” (D-06); totais **por `category`** do tipo (dízimos, ofertas, oferta de construção, missões, rendimentos, outros) lidos de `category_snapshot`/`kind_snapshot`; só lançamentos `ACTIVE`.
 - **RN-9.3** Sem dados: PDF com “Sem contribuições no período”.
-- **RN-9.4** Até 2 000 linhas: resposta direta; acima: job (`202 { jobId }`).
+- **RN-9.4** O PDF é gerado e retornado diretamente na chamada, sem job.
 
-**Back-end:** `GET /contributions/report?from&to` (`contributions-report:generate`) → `application/pdf` ou `202`. **Front-end:** diálogo “Gerar relatório” com período, atalhos (semana atual e anterior respeitando `weekStartsOn`, mês atual), pré-visualização/baixar; progresso quando assíncrono.
+**Back-end:** `GET /contributions/report?from&to` (`contributions-report:generate`) → `application/pdf`, com lançamentos agrupados por meio de pagamento. **Front-end:** diálogo “Gerar relatório” com período, atalhos (semana atual e anterior respeitando `weekStartsOn`, mês atual), pré-visualização/baixar.
 **Aceite:** lançamentos nos dias inicial e final entram; soma por `kind` e por `category` iguala o total geral; cancelados não aparecem.
 
 ---
