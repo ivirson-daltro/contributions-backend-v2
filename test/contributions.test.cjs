@@ -15,7 +15,7 @@ Object.assign(process.env, {
 require("reflect-metadata");
 const { ContributionsService } = require("../dist/modules/contributions/contributions.service");
 const { ContributionsReportService, reportDocument } = require("../dist/modules/contributions/contributions-report.service");
-const { createContributionSchema, contributionQuerySchema, contributionReportQuerySchema } = require("../dist/modules/contributions/contributions.dto");
+const { createContributionSchema, contributionQuerySchema, contributionReportQuerySchema, memberLookupQuerySchema } = require("../dist/modules/contributions/contributions.dto");
 
 function executorWith(run) {
   const db = new Kysely({ dialect: new PostgresDialect({ pool: {} }) });
@@ -69,6 +69,55 @@ test("valida valores, datas, filtros e recusa anexos ainda não suportados", () 
   assert.equal(contributionQuerySchema.safeParse({ from: "2026-11-02", to: "2026-11-01" }).success, false);
 });
 
+test("busca de membros pagina apenas ativos do tenant e aceita fragmentos", async () => {
+  const db = new DatabaseSync(":memory:");
+  try {
+    db.function("app_norm", (value) => value === null ? null : value.toLowerCase());
+    db.exec(`
+      create table members (id text, tenant_id text, name text, member_type_id text, status text, deleted_at text);
+      create table member_types (id text, tenant_id text, description text);
+      insert into member_types values ('type', 'tenant-a', 'Membro'), ('type', 'tenant-b', 'Membro');
+    `);
+    const insert = db.prepare("insert into members values (?, ?, ?, 'type', ?, ?)");
+    for (let index = 1; index <= 45; index++) {
+      insert.run(`member-${index}`, "tenant-a", `Pessoa ${String(index).padStart(2, "0")}`, "ACTIVE", null);
+    }
+    insert.run("inactive", "tenant-a", "Pessoa inativa", "INACTIVE", null);
+    insert.run("deleted", "tenant-a", "Pessoa excluída", "ACTIVE", "2026-01-01");
+    insert.run("other", "tenant-b", "Pessoa outra igreja", "ACTIVE", null);
+
+    const service = serviceWith(async (compiled) => {
+      const query = compiled.sql
+        .replace(/\$\d+/g, "?")
+        .replace(/::(?:uuid|text)/g, "")
+        .replaceAll("jsonb_build_object", "json_object");
+      const rows = db.prepare(query).all(...compiled.parameters)
+        .map((row) => ({ ...row, member_type: JSON.parse(row.member_type) }));
+      return { rows };
+    });
+    const first = await service.lookupMembers("tenant-a", "user", {});
+    const second = await service.lookupMembers("tenant-a", "user", { page: "2" });
+    const third = await service.lookupMembers("tenant-a", "user", { page: "3" });
+    assert.deepEqual([first.length, second.length, third.length], [20, 20, 5]);
+    assert.equal(new Set([...first, ...second, ...third].map((member) => member.id)).size, 45);
+    assert.equal(third[4].name, "Pessoa 45");
+    const filtered = await service.lookupMembers("tenant-a", "user", { q: "soa 44" });
+    assert.deepEqual(filtered.map((member) => member.name), ["Pessoa 44"]);
+    const all = await service.listAllMembers("tenant-a", "user");
+    assert.deepEqual(all, [...first, ...second, ...third]);
+    assert.deepEqual(all[0], {
+      id: "member-1", name: "Pessoa 01", memberType: { id: "type", description: "Membro" },
+    });
+    assert.deepEqual(await service.listAllMembers("tenant-b", "user"), [{
+      id: "other", name: "Pessoa outra igreja", memberType: { id: "type", description: "Membro" },
+    }]);
+    assert.equal(memberLookupQuerySchema.safeParse({ page: "0" }).success, false);
+    assert.equal(memberLookupQuerySchema.safeParse({ page: "2" }).success, true);
+  } finally {
+    db.close();
+  }
+});
+
 test("listagem soma e conta todo o filtro, não apenas a página", async () => {
   const db = new DatabaseSync(":memory:");
   try {
@@ -100,14 +149,6 @@ test("listagem soma e conta todo o filtro, não apenas a página", async () => {
     const service = serviceWith(async (compiled) => {
       const query = compiled.sql
         .replace(/\$\d+/g, "?")
-        .replace(
-          "(date_trunc('month', now() at time zone t.timezone) + interval '1 month')::date",
-          "(case when t.timezone = 'Pacific/Kiritimati' then '2027-01-01' else '2026-12-01' end)",
-        )
-        .replace(
-          "date_trunc('month', now() at time zone t.timezone)::date",
-          "(case when t.timezone = 'Pacific/Kiritimati' then '2026-12-01' else '2026-11-01' end)",
-        )
         .replace(/::(?:uuid|date|text|jsonb)/g, "")
         .replace(/to_char\(c\.occurred_on, 'YYYY-MM-DD'\)/g, "c.occurred_on")
         .replaceAll("jsonb_build_object", "json_object")
@@ -115,11 +156,21 @@ test("listagem soma e conta todo o filtro, não apenas a página", async () => {
       const row = db.prepare(query).get(...compiled.parameters);
       return { rows: [{ ...row, data: JSON.parse(row.data) }] };
     });
-    const result = await service.list("tenant-a", "user", { status: "ALL", pageSize: "1", page: "2", q: "ana" });
+    const result = await service.list("tenant-a", "user", {
+      status: "ALL", pageSize: "1", page: "2", q: "ana", from: "2026-11-01", to: "2026-11-30",
+    });
     assert.equal(result.data.length, 1);
     assert.equal(result.meta.total, 4);
     assert.equal(result.meta.totals.count, 3);
     assert.equal(Number(result.meta.totals.amount), 370);
+    const unfiltered = await service.list("tenant-a", "user", { pageSize: "1" });
+    assert.equal(unfiltered.data.length, 1);
+    assert.equal(unfiltered.meta.total, 5);
+    assert.equal(unfiltered.meta.totals.count, 5);
+    assert.equal(Number(unfiltered.meta.totals.amount), 450);
+    const allStatuses = await service.list("tenant-a", "user", { status: "ALL" });
+    assert.equal(allStatuses.meta.total, 6);
+    assert.equal(allStatuses.meta.totals.count, 5);
     const previous = await service.list("tenant-a", "user", { from: "2026-10-01", to: "2026-10-31" });
     assert.equal(previous.meta.total, 1);
     assert.equal(previous.data[0].id, "e");
@@ -211,6 +262,7 @@ test("Swagger expõe rotas, headers, filtros e campos do cadastro", async () => 
     assert.ok(document.paths["/v1/catalogs/contribution-types"].get);
     assert.ok(document.paths["/v1/catalogs/payment-methods"].get);
     assert.ok(document.paths["/v1/members/lookup"].get);
+    assert.ok(document.paths["/v1/members/all"].get);
     const report = document.paths["/v1/contributions/report"].get;
     assert.ok(report.parameters.some((parameter) => parameter.name === "from" && parameter.required));
     assert.ok(report.parameters.some((parameter) => parameter.name === "to" && parameter.required));

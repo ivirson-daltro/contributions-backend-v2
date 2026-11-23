@@ -70,7 +70,7 @@ export class ContributionsController {
   @RequirePermissions("contributions:read")
   @ApiOperation({
     summary: "Lista contribuições e totais de todo o filtro",
-    description: "Sem from e to, retorna o mês vigente no fuso do tenant. Ao informar qualquer uma das datas, aplica apenas os limites informados.",
+    description: "Sem from e to, retorna contribuições de todos os períodos. Ao informar qualquer uma das datas, aplica apenas os limites informados.",
   })
   @ApiQuery({ name: "q", required: false, type: String, description: "Busca parcial pelo nome do membro." })
   @ApiQuery({ name: "memberId", required: false, type: String })
@@ -269,6 +269,7 @@ export class ContributionsController {
   @RequirePermissions("members:read-list")
   @ApiOperation({ summary: "Busca membros ativos para o formulário" })
   @ApiQuery({ name: "q", required: false, type: String })
+  @ApiQuery({ name: "page", required: false, type: Number, description: "Página de até 20 membros; padrão 1." })
   @ApiOkResponse({ schema: { example: [{
     id: "00000000-0000-4000-8000-000000000001",
     name: "Ana",
@@ -279,6 +280,21 @@ export class ContributionsController {
     @CurrentTenant() tenant: TenantRequestContext,
     @Query() query: MemberLookupQueryDto,
   ) {
-    return this.service.lookupMembers(tenant.tenantId!, user.userId, query.q);
+    return this.service.lookupMembers(tenant.tenantId!, user.userId, query);
+  }
+
+  @Get("members/all")
+  @RequirePermissions("members:read-list")
+  @ApiOperation({ summary: "Lista todos os membros ativos para o formulário" })
+  @ApiOkResponse({ schema: { example: [{
+    id: "00000000-0000-4000-8000-000000000001",
+    name: "Ana",
+    memberType: { id: "00000000-0000-4000-8000-000000000002", description: "Membro" },
+  }] } })
+  listAllMembers(
+    @CurrentUser() user: AuthenticatedUser,
+    @CurrentTenant() tenant: TenantRequestContext,
+  ) {
+    return this.service.listAllMembers(tenant.tenantId!, user.userId);
   }
 }

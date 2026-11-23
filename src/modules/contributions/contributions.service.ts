@@ -16,6 +16,7 @@ import {
   CreateContributionDto,
   UpdateContributionDto,
   DeleteContributionDto,
+  MemberLookupQueryDto,
   OptionsQueryDto,
 } from "./contributions.dto";
 
@@ -72,13 +73,6 @@ export class ContributionsService {
     const sort = columns[query.sort ?? "date"];
     const direction = pagination.order === "asc" ? "asc" : "desc";
     const ordering = sql.raw(`${sort} ${direction} nulls last, f.id ${direction}`);
-    const defaultPeriod = !query.from && !query.to
-      ? sql`
-          and c.occurred_on >= date_trunc('month', now() at time zone t.timezone)::date
-          and c.occurred_on < (date_trunc('month', now() at time zone t.timezone) + interval '1 month')::date
-        `
-      : sql``;
-
     return this.transactions.withTenantTx({ tenantId, userId }, async (trx) => {
       const result = await sql<ContributionListRow>`
         with filtered as (
@@ -103,12 +97,10 @@ export class ContributionsService {
                    'version', c.version
                  ) as item
             from contributions c
-            join tenants t on t.id = c.tenant_id
             join contribution_types ct on ct.tenant_id = c.tenant_id and ct.id = c.contribution_type_id
             join payment_methods pm on pm.tenant_id = c.tenant_id and pm.id = c.payment_method_id
             left join members m on m.tenant_id = c.tenant_id and m.id = c.member_id
            where c.tenant_id = ${tenantId}::uuid
-             ${defaultPeriod}
              and (${query.memberId ?? null}::uuid is null or c.member_id = ${query.memberId ?? null}::uuid)
              and (${query.typeId ?? null}::uuid is null or c.contribution_type_id = ${query.typeId ?? null}::uuid)
              and (${query.methodId ?? null}::uuid is null or c.payment_method_id = ${query.methodId ?? null}::uuid)
@@ -184,7 +176,21 @@ export class ContributionsService {
     });
   }
 
-  lookupMembers(tenantId: string, userId: string, q?: string) {
+  lookupMembers(tenantId: string, userId: string, query: MemberLookupQueryDto) {
+    const pagination = parsePagination({ page: query.page });
+    return this.findActiveMembers(tenantId, userId, query.q, pagination);
+  }
+
+  listAllMembers(tenantId: string, userId: string) {
+    return this.findActiveMembers(tenantId, userId);
+  }
+
+  private findActiveMembers(
+    tenantId: string,
+    userId: string,
+    q?: string,
+    pagination?: { pageSize: number; offset: number },
+  ) {
     return this.transactions.withTenantTx({ tenantId, userId }, async (trx) => {
       const result = await sql<{
         id: string;
@@ -198,7 +204,7 @@ export class ContributionsService {
          where m.tenant_id = ${tenantId}::uuid and m.status = 'ACTIVE' and m.deleted_at is null
            and (${q || null}::text is null or app_norm(m.name) like '%' || app_norm(${q || null}::text) || '%')
          order by m.name, m.id
-         limit 20
+         ${pagination ? sql`limit ${pagination.pageSize} offset ${pagination.offset}` : sql``}
       `.execute(trx);
       return result.rows.map((row) => ({
         id: row.id,

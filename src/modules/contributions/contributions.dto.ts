@@ -85,7 +85,10 @@ export const optionsQuerySchema = z
   .strict();
 
 export const memberLookupQuerySchema = z
-  .object({ q: z.string().trim().max(120).optional() })
+  .object({
+    q: z.string().trim().max(120).optional(),
+    page: positiveInteger.optional(),
+  })
   .strict();
 
 export class ContributionQueryDto extends createZodDto(contributionQuerySchema) {}

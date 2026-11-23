@@ -22,11 +22,27 @@ export function reportHeader(
     { text: header.name, style: "church" },
     ...(header.document ? [{ text: `Documento: ${header.document}`, alignment: "center" as const }] : []),
     { text: title, style: "title" },
-    { text: `Período: ${period}` },
-    { text: `Emitido por: ${issuer}` },
-    { text: `Gerado em: ${new Intl.DateTimeFormat("pt-BR", {
-      timeZone: header.timezone, dateStyle: "short", timeStyle: "short",
-    }).format(generatedAt)} (${header.timezone})`, margin: [0, 0, 0, 12] },
+    {
+      columns: [
+        { width: "*", text: `Período: ${period}`, bold: true },
+        {
+          width: "auto",
+          text: `Emitido por: ${issuer}, em ${new Intl.DateTimeFormat("pt-BR", {
+            timeZone: header.timezone,
+            day: "2-digit",
+            month: "2-digit",
+            year: "numeric",
+            hour: "2-digit",
+            minute: "2-digit",
+            hourCycle: "h23",
+          }).format(generatedAt)}`,
+          alignment: "right",
+          fontSize: 8,
+          noWrap: true,
+        },
+      ],
+      margin: [0, 0, 0, 12],
+    },
   ];
 }
 
@@ -96,16 +112,13 @@ export function reportSignatures(signatureRows: string[][]): Content[] {
 export function reportLayout(content: Content[]): TDocumentDefinitions {
   return {
     pageSize: "A4",
-    pageMargins: [40, 35, 40, 40],
+    pageMargins: [40, 35, 40, 20],
     defaultStyle: { font: "Helvetica", fontSize: 9 },
     styles: {
       church: { fontSize: 14, bold: true, alignment: "center" },
       title: { fontSize: 13, bold: true, alignment: "center", margin: [0, 6, 0, 12] },
       section: { fontSize: 11, bold: true, margin: [0, 10, 0, 5] },
     },
-    footer: (currentPage, pageCount) => ({
-      text: `${currentPage} / ${pageCount}`, alignment: "center", fontSize: 8,
-    }),
     content,
   };
 }
