@@ -1,27 +1,20 @@
 #!/usr/bin/env node
 
-/**
- * Database Migration Runner
- * 
- * This script runs all pending migrations from the supabase/migrations directory.
- * It supports both local Supabase development and Supabase Cloud.
- * 
- * Usage:
- *   node scripts/migrate.js
- * 
- * Or with npm:
- *   npm run migrate
- */
-
 const fs = require("fs");
 const path = require("path");
 const { execSync } = require("child_process");
 
 const MIGRATIONS_DIR = path.join(__dirname, "../supabase/migrations");
 const NODE_ENV = process.env.NODE_ENV || "development";
-const SUPABASE_DB_URL = process.env.DATABASE_URL || process.env.SUPABASE_DB_URL;
+const DATABASE_URL = process.env.DATABASE_URL;
+const SKIP_MIGRATIONS = process.env.SKIP_MIGRATIONS === "true";
 
 console.log("🗂️  Running database migrations...\n");
+
+if (SKIP_MIGRATIONS) {
+  console.log("⏭️  Migrations skipped (SKIP_MIGRATIONS=true)");
+  process.exit(0);
+}
 
 if (!fs.existsSync(MIGRATIONS_DIR)) {
   console.error(`❌ Migrations directory not found: ${MIGRATIONS_DIR}`);
@@ -38,48 +31,39 @@ if (migrations.length === 0) {
   process.exit(0);
 }
 
-console.log(`Found ${migrations.length} migration(s):\n`);
+console.log(`Found ${migrations.length} migration(s):`);
 migrations.forEach((file) => console.log(`  • ${file}`));
 console.log();
 
-// Skip migrations if in production without proper database URL
-if (NODE_ENV === "production") {
-  if (!SUPABASE_DB_URL) {
-    console.warn("⚠️  Production mode: DATABASE_URL not set. Skipping migrations.");
-    console.warn("   Make sure migrations have been run on your Supabase Cloud instance.");
-    console.warn("   Run migrations manually with: supabase db push --db-url <url>\n");
-    process.exit(0);
-  }
-  
-  console.log("📡 Production mode: Attempting to migrate Supabase Cloud instance...\n");
-  
-  try {
-    execSync(`supabase db push --db-url "${SUPABASE_DB_URL}"`, { stdio: "inherit" });
-    console.log("\n✅ Migrations completed successfully!");
-  } catch (error) {
-    console.error("\n❌ Migration failed in production!");
-    console.error("Please ensure your DATABASE_URL is correct and accessible.");
-    process.exit(1);
-  }
+let command = "supabase db push";
+
+if (DATABASE_URL) {
+  console.log("📡 Using Supabase Cloud (DATABASE_URL is set)\n");
+  command += ` --db-url "${DATABASE_URL}"`;
+} else if (NODE_ENV === "production") {
+  console.warn("⚠️  Production mode: DATABASE_URL not set. Skipping migrations.");
+  console.warn("   Ensure migrations have been run on your database.\n");
   process.exit(0);
+} else {
+  console.log("🏠 Development mode: Attempting local Supabase (or use DATABASE_URL)\n");
 }
 
-// Development mode: Try local Supabase first
-console.log("🏠 Development mode: Attempting local Supabase...\n");
-
 try {
-  execSync("supabase db push", { stdio: "inherit" });
-  console.log("\n✅ Local migrations completed successfully!");
+  execSync(command, { stdio: "inherit" });
+  console.log("\n✅ Migrations completed successfully!");
+  process.exit(0);
 } catch (error) {
   if (error.message.includes("ECONNREFUSED") || error.message.includes("connect")) {
-    console.error("\n⚠️  Could not connect to local Supabase database.");
-    console.error("\nTo fix this, choose one of:\n");
-    console.error("Option 1: Start local Supabase");
-    console.error("  supabase start\n");
-    console.error("Option 2: Use Supabase Cloud (set DATABASE_URL in .env)");
-    console.error("  DATABASE_URL=postgresql://user:password@host:port/database\n");
-    console.error("Option 3: Skip migrations during development");
-    console.error("  SKIP_MIGRATIONS=true npm start\n");
+    if (DATABASE_URL) {
+      console.error("\n❌ Could not connect to Supabase Cloud database.");
+      console.error("Please check your DATABASE_URL is correct and accessible.\n");
+    } else {
+      console.error("\n❌ Could not connect to local Supabase database.");
+      console.error("\nOptions:");
+      console.error("  1. Start local Supabase: supabase start");
+      console.error("  2. Use Supabase Cloud: set DATABASE_URL in .env");
+      console.error("  3. Skip migrations: SKIP_MIGRATIONS=true npm start\n");
+    }
     process.exit(1);
   }
   
