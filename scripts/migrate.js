@@ -1,5 +1,8 @@
 #!/usr/bin/env node
 
+// Load .env file first
+require("dotenv").config({ path: require("path").join(__dirname, "../.env") });
+
 const fs = require("fs");
 const path = require("path");
 const { execSync } = require("child_process");
@@ -35,7 +38,7 @@ console.log(`Found ${migrations.length} migration(s):`);
 migrations.forEach((file) => console.log(`  • ${file}`));
 console.log();
 
-let command = "supabase db push";
+let command = "supabase db push --yes";
 
 if (DATABASE_URL) {
   console.log("📡 Using Supabase Cloud (DATABASE_URL is set)\n");
@@ -45,7 +48,7 @@ if (DATABASE_URL) {
   console.warn("   Ensure migrations have been run on your database.\n");
   process.exit(0);
 } else {
-  console.log("🏠 Development mode: Attempting local Supabase (or use DATABASE_URL)\n");
+  console.log("🏠 Development mode: Attempting local Supabase (or set DATABASE_URL in .env)\n");
 }
 
 try {
