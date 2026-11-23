@@ -2,21 +2,22 @@
 
 ## Overview
 
-This project uses Supabase for database management. All schema changes are tracked in the `supabase/migrations/` directory and must be executed before running the application.
+This project uses Supabase for database management. All schema changes are tracked in the `supabase/migrations/` directory and must be executed before running the application in production.
 
 ## Running Migrations
 
 ### Automatically (Recommended)
 
-When you run `npm start`, migrations will execute automatically before the application starts:
+When you run `npm start`, migrations will execute automatically:
 
 ```bash
 npm start
 ```
 
 This runs:
-1. `npm run migrate` - Executes all pending migrations
-2. Starts the application - `node dist/main.js`
+1. `npm run build` - Compiles the application
+2. `npm run migrate` - Executes all pending migrations
+3. Starts the application - `node dist/main.js`
 
 ### Manually
 
@@ -26,11 +27,69 @@ If you prefer to run migrations separately:
 npm run migrate
 ```
 
-Or using Supabase CLI directly:
+## Environment Setup
+
+### For Local Development (Recommended)
+
+Start a local Supabase instance:
 
 ```bash
-supabase db push
+# Install Supabase CLI globally
+npm install -g supabase
+
+# Start local Supabase (creates a PostgreSQL instance on localhost:54322)
+supabase start
+
+# Then run your app - migrations will execute automatically
+npm start
 ```
+
+This is the easiest way to develop locally without needing cloud credentials.
+
+### For Supabase Cloud
+
+If you're using Supabase Cloud or a remote PostgreSQL database:
+
+1. Set up your `.env` file with the database URL:
+   ```bash
+   cp .env.example .env
+   ```
+
+2. Update `DATABASE_URL` in `.env`:
+   ```env
+   DATABASE_URL=postgresql://user:password@host:port/database
+   ```
+
+3. Run your app:
+   ```bash
+   npm start
+   ```
+
+The migration runner will detect this and use your cloud database.
+
+### Skip Migrations During Development
+
+If you want to skip migrations during development (e.g., using an existing database):
+
+```bash
+# Windows
+set SKIP_MIGRATIONS=true && npm start
+
+# macOS/Linux
+SKIP_MIGRATIONS=true npm start
+```
+
+## How It Works
+
+The migration runner (`scripts/migrate.js`) automatically handles different environments:
+
+| Environment | Behavior |
+|------------|----------|
+| **Development + Local Supabase** | Connects to `localhost:54322` and runs migrations |
+| **Development + Cloud Database** | Uses `DATABASE_URL` from `.env` and runs migrations |
+| **Development + No Database** | Displays helpful error message with options |
+| **Production + DATABASE_URL set** | Uses `DATABASE_URL` and runs migrations |
+| **Production + No DATABASE_URL** | Shows warning and skips migrations (assumes already applied) |
 
 ## Prerequisites
 
@@ -41,12 +100,9 @@ To run migrations, you need:
    npm install -g supabase
    ```
 
-2. **Environment variables** configured for your Supabase project:
-   - `SUPABASE_URL` - Your Supabase project URL
-   - `SUPABASE_KEY` - Your Supabase API key
-   - Database connection string in `DATABASE_URL` or via `.env.local`
+2. **For local development**: PostgreSQL client tools (included with Supabase CLI)
 
-3. **PostgreSQL client** (pg_dump, psql) - Usually installed with Supabase CLI
+3. **For cloud**: A valid `DATABASE_URL` environment variable pointing to your database
 
 ## Creating New Migrations
 
@@ -79,6 +135,28 @@ When you need to modify the database schema:
 
 ## Troubleshooting
 
+### "dial error (connect ECONNREFUSED 127.0.0.1:54322)"
+
+This means local Supabase is not running. Choose one of these options:
+
+**Option 1: Start local Supabase** (Recommended for development)
+```bash
+supabase start
+npm start
+```
+
+**Option 2: Use Supabase Cloud**
+```bash
+# Update .env with your cloud database URL
+DATABASE_URL=postgresql://user:password@host:port/database
+npm start
+```
+
+**Option 3: Skip migrations temporarily**
+```bash
+SKIP_MIGRATIONS=true npm start
+```
+
 ### "Supabase CLI not found"
 
 Install Supabase CLI globally:
@@ -86,24 +164,23 @@ Install Supabase CLI globally:
 npm install -g supabase
 ```
 
-Then authenticate:
+Then authenticate (for cloud operations):
 ```bash
 supabase login
 ```
 
-### "Migrations failed"
+### "Migration failed in production"
 
-1. Check your Supabase credentials in environment variables
-2. Verify the database is accessible
-3. Check for SQL syntax errors in the migration file
-4. Run with verbose output:
+1. Verify `DATABASE_URL` is set correctly
+2. Check database is accessible from your server
+3. Run migrations manually with verbose output:
    ```bash
-   supabase db push --debug
+   supabase db push --debug --db-url "your-url"
    ```
 
 ### "Migration already executed"
 
-If you see warnings about migrations already being applied, that's normal. Each migration is tracked and won't be re-applied.
+This is normal. Each migration is tracked and won't be re-applied. You can safely run migrations multiple times.
 
 ## Recent Migrations
 
@@ -114,4 +191,21 @@ Two migrations were added to fix the issue where "Dinheiro" (cash) payments were
 - `20261123102759_ensure_payment_methods_kind.sql` - Ensures all payment_methods have valid kind values
 - `20261123102800_populate_kind_snapshot.sql` - Populates kind_snapshot for existing contributions
 
-These must be run before the application will show correct payment method types in reports.
+**These must be run** before the application will show correct payment method types in reports.
+
+## Production Deployment
+
+For production deployment:
+
+1. Ensure `DATABASE_URL` is set to your production database
+2. Build the application: `npm run build`
+3. Run migrations: `npm run migrate`
+4. Start the application: `node dist/main.js`
+
+Or use the standard start command which does all of this:
+```bash
+npm start
+```
+
+The migration runner will automatically use your production database credentials.
+
