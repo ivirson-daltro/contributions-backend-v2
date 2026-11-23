@@ -50,6 +50,32 @@ export const createContributionSchema = z
   })
   .strict();
 
+export const updateContributionSchema = z
+  .object({
+    contributionTypeId: uuid.optional(),
+    paymentMethodId: uuid.optional(),
+    memberId: uuid.nullable().optional(),
+    amount: z
+      .string()
+      .regex(/^\d{1,12}(\.\d{1,2})?$/)
+      .refine((value) => /[1-9]/.test(value), "O valor deve ser positivo.")
+      .optional(),
+    occurredOn: date.optional(),
+    observation: z.string().trim().max(2000).nullable().optional(),
+    version: z.number().int().positive(),
+  })
+  .strict()
+  .refine((value) => Object.keys(value).length > 1, {
+    message: "Pelo menos um campo deve ser atualizado além da versão.",
+  });
+
+export const deleteContributionSchema = z
+  .object({
+    voidReason: z.string().trim().max(2000).optional(),
+    version: z.number().int().positive(),
+  })
+  .strict();
+
 export const optionsQuerySchema = z
   .object({
     q: z.string().trim().max(120).optional(),
@@ -65,5 +91,7 @@ export const memberLookupQuerySchema = z
 export class ContributionQueryDto extends createZodDto(contributionQuerySchema) {}
 export class ContributionReportQueryDto extends createZodDto(contributionReportQuerySchema) {}
 export class CreateContributionDto extends createZodDto(createContributionSchema) {}
+export class UpdateContributionDto extends createZodDto(updateContributionSchema) {}
+export class DeleteContributionDto extends createZodDto(deleteContributionSchema) {}
 export class OptionsQueryDto extends createZodDto(optionsQuerySchema) {}
 export class MemberLookupQueryDto extends createZodDto(memberLookupQuerySchema) {}

@@ -1,11 +1,13 @@
-import { Body, Controller, Get, Header, Headers, Post, Query, StreamableFile } from "@nestjs/common";
+import { Body, Controller, Delete, Get, Header, Headers, Param, Post, Put, Query, StreamableFile } from "@nestjs/common";
 import {
   ApiBadRequestResponse,
   ApiBearerAuth,
   ApiBody,
+  ApiConflictResponse,
   ApiCreatedResponse,
   ApiHeader,
   ApiForbiddenResponse,
+  ApiNotFoundResponse,
   ApiOkResponse,
   ApiOperation,
   ApiProduces,
@@ -21,6 +23,8 @@ import {
   ContributionQueryDto,
   ContributionReportQueryDto,
   CreateContributionDto,
+  UpdateContributionDto,
+  DeleteContributionDto,
   MemberLookupQueryDto,
   OptionsQueryDto,
 } from "./contributions.dto";
@@ -142,6 +146,87 @@ export class ContributionsController {
     @Body() payload: CreateContributionDto,
   ) {
     return this.service.create(tenant.tenantId!, user.userId, key, payload);
+  }
+
+  @Put("contributions/:id")
+  @RequirePermissions("contributions:write")
+  @ApiOperation({
+    summary: "Atualiza uma contribuição",
+    description: "Exige version para evitar conflitos de concorrência. Todos os campos de contribuição são opcionais, mas pelo menos um deve ser informado além da versão.",
+  })
+  @ApiBody({
+    schema: {
+      type: "object",
+      required: ["version"],
+      additionalProperties: false,
+      properties: {
+        contributionTypeId: { type: "string", format: "uuid" },
+        paymentMethodId: { type: "string", format: "uuid" },
+        memberId: { type: "string", format: "uuid", nullable: true },
+        amount: { type: "string", example: "850.00", description: "Valor decimal positivo, com até duas casas." },
+        occurredOn: { type: "string", format: "date", example: "2026-11-12" },
+        observation: { type: "string", nullable: true, maxLength: 2000 },
+        version: { type: "number", example: 1, description: "Versão atual da contribuição." },
+      },
+    },
+  })
+  @ApiOkResponse({
+    description: "Contribuição atualizada com sucesso.",
+    schema: { example: {
+      id: "00000000-0000-4000-8000-000000000001",
+      occurredOn: "2026-11-12", amount: "850.00",
+      member: { id: "00000000-0000-4000-8000-000000000002", name: "Ana" },
+      type: { id: "00000000-0000-4000-8000-000000000003", description: "Dízimo", category: "TITHE" },
+      method: { id: "00000000-0000-4000-8000-000000000004", description: "Pix", kind: "PIX" },
+      observation: null, status: "ACTIVE", attachmentsCount: 0, version: 2,
+    } },
+  })
+  @ApiNotFoundResponse({ description: "Contribuição não encontrada." })
+  @ApiConflictResponse({ description: "Contribuição foi anulada, versão desatualizada ou período fechado." })
+  @ApiBadRequestResponse({ description: "Validação falhou." })
+  update(
+    @CurrentUser() user: AuthenticatedUser,
+    @CurrentTenant() tenant: TenantRequestContext,
+    @Param("id") id: string,
+    @Body() payload: UpdateContributionDto,
+  ) {
+    return this.service.update(tenant.tenantId!, user.userId, id, payload);
+  }
+
+  @Delete("contributions/:id")
+  @RequirePermissions("contributions:write")
+  @ApiOperation({
+    summary: "Anula uma contribuição (soft-delete)",
+    description: "Marca a contribuição como VOIDED. Exige version para evitar conflitos de concorrência.",
+  })
+  @ApiBody({
+    schema: {
+      type: "object",
+      required: ["version"],
+      additionalProperties: false,
+      properties: {
+        voidReason: { type: "string", maxLength: 2000, nullable: true, description: "Motivo da anulação (opcional)." },
+        version: { type: "number", example: 1, description: "Versão atual da contribuição." },
+      },
+    },
+  })
+  @ApiOkResponse({
+    description: "Contribuição anulada com sucesso.",
+    schema: { example: {
+      id: "00000000-0000-4000-8000-000000000001",
+      status: "VOIDED",
+      voidReason: "Cancelado por engano",
+    } },
+  })
+  @ApiNotFoundResponse({ description: "Contribuição não encontrada." })
+  @ApiConflictResponse({ description: "Contribuição já foi anulada ou versão desatualizada." })
+  delete(
+    @CurrentUser() user: AuthenticatedUser,
+    @CurrentTenant() tenant: TenantRequestContext,
+    @Param("id") id: string,
+    @Body() payload: DeleteContributionDto,
+  ) {
+    return this.service.void(tenant.tenantId!, user.userId, id, payload);
   }
 
   @Get("catalogs/contribution-types")

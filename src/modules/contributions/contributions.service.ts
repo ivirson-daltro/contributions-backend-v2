@@ -4,6 +4,7 @@ import {
   Injectable,
   InternalServerErrorException,
   UnprocessableEntityException,
+  NotFoundException,
 } from "@nestjs/common";
 import { createHash } from "node:crypto";
 import { sql } from "kysely";
@@ -13,6 +14,8 @@ import { pageResponse, parsePagination } from "../../common/http/pagination";
 import {
   ContributionQueryDto,
   CreateContributionDto,
+  UpdateContributionDto,
+  DeleteContributionDto,
   OptionsQueryDto,
 } from "./contributions.dto";
 
@@ -337,4 +340,209 @@ export class ContributionsService {
       return response;
     });
   }
+
+  async update(
+    tenantId: string,
+    userId: string,
+    contributionId: string,
+    payload: UpdateContributionDto,
+  ): Promise<ContributionItem> {
+    return this.transactions.withTenantTx({ tenantId, userId }, async (trx) => {
+      const existing = await sql<{
+        id: string;
+        status: string;
+        version: number;
+        amount: string;
+        occurred_on: string;
+        observation: string | null;
+        member_id: string | null;
+        member_name: string | null;
+        contribution_type_id: string;
+        type_description: string;
+        category_snapshot: string;
+        payment_method_id: string;
+        method_description: string;
+        kind_snapshot: string;
+      }>`
+        select c.id, c.status, c.version, c.amount::text, c.occurred_on,
+               c.observation, c.member_id, m.name as member_name,
+               c.contribution_type_id, ct.description as type_description,
+               c.category_snapshot, c.payment_method_id, pm.description as method_description,
+               c.kind_snapshot
+          from contributions c
+          join contribution_types ct on ct.tenant_id = c.tenant_id and ct.id = c.contribution_type_id
+          join payment_methods pm on pm.tenant_id = c.tenant_id and pm.id = c.payment_method_id
+          left join members m on m.tenant_id = c.tenant_id and m.id = c.member_id
+         where c.tenant_id = ${tenantId}::uuid and c.id = ${contributionId}::uuid
+           for update
+      `.execute(trx);
+      
+      const row = existing.rows[0];
+      if (!row) throw new NotFoundException({ code: "CONTRIBUTION_NOT_FOUND" });
+      if (row.status === "VOIDED") throw new ConflictException({ code: "CONTRIBUTION_VOIDED" });
+      if (row.version !== payload.version) throw new ConflictException({ code: "VERSION_MISMATCH" });
+
+      const typeId = payload.contributionTypeId ?? row.contribution_type_id;
+      const methodId = payload.paymentMethodId ?? row.payment_method_id;
+      const amount = payload.amount ?? row.amount;
+      const occurredOn = payload.occurredOn ?? row.occurred_on;
+      const observation = payload.observation !== undefined ? payload.observation : row.observation;
+      const memberId = payload.memberId !== undefined ? payload.memberId : row.member_id;
+
+      const typeResult = await sql<{
+        id: string; description: string; category: string; requires_member: boolean;
+      }>`
+        select id, description, category, requires_member from contribution_types
+         where tenant_id = ${tenantId}::uuid and id = ${typeId}::uuid and active
+         for share
+      `.execute(trx);
+      const type = typeResult.rows[0];
+      if (!type) throw new UnprocessableEntityException({ code: "INVALID_REFERENCE", detail: "Tipo de contribuição inválido ou inativo." });
+
+      const methodResult = await sql<{ id: string; description: string; kind: string }>`
+        select id, description, coalesce(kind, 'OTHER') as kind from payment_methods
+         where tenant_id = ${tenantId}::uuid and id = ${methodId}::uuid and active
+         for share
+      `.execute(trx);
+      const method = methodResult.rows[0];
+      if (!method) throw new UnprocessableEntityException({ code: "INVALID_REFERENCE", detail: "Meio de pagamento inválido ou inativo." });
+
+      if (type.requires_member && !memberId) {
+        throw new UnprocessableEntityException({ code: "MEMBER_REQUIRED" });
+      }
+
+      let member: ContributionItem["member"] = null;
+      if (memberId) {
+        const memberResult = await sql<{ id: string; name: string }>`
+          select id, name from members
+           where tenant_id = ${tenantId}::uuid and id = ${memberId}::uuid
+             and status = 'ACTIVE' and deleted_at is null for share
+        `.execute(trx);
+        member = memberResult.rows[0] ?? null;
+        if (!member) throw new UnprocessableEntityException({ code: "INVALID_REFERENCE", detail: "Membro inválido ou inativo." });
+      }
+
+      const settings = await sql<{ allow_future_dates: boolean; today: string }>`
+        select s.allow_future_dates, to_char(now() at time zone t.timezone, 'YYYY-MM-DD') as today
+          from tenants t join tenant_settings s on s.tenant_id = t.id
+         where t.id = ${tenantId}::uuid
+      `.execute(trx);
+      const config = settings.rows[0];
+      if (!config) throw new InternalServerErrorException({ code: "INTERNAL" });
+      if (!config.allow_future_dates && occurredOn > config.today) {
+        throw new UnprocessableEntityException({ code: "FUTURE_DATE_NOT_ALLOWED" });
+      }
+
+      const closed = await sql<{ closed: boolean }>`
+        select v2_is_month_closed(${tenantId}::uuid, ${occurredOn}::date) as closed
+      `.execute(trx);
+      if (!closed.rows[0]) throw new InternalServerErrorException({ code: "INTERNAL" });
+      if (closed.rows[0].closed) throw new ConflictException({ code: "MONTH_CLOSED" });
+
+      const updated = await sql<{ id: string; amount: string; version: number }>`
+        update contributions
+           set contribution_type_id = ${type.id}::uuid,
+               payment_method_id = ${method.id}::uuid,
+               member_id = ${memberId}::uuid,
+               amount = ${amount}::numeric,
+               occurred_on = ${occurredOn}::date,
+               observation = ${observation},
+               version = version + 1,
+               updated_by = ${userId}::uuid,
+               updated_at = now()
+         where tenant_id = ${tenantId}::uuid and id = ${contributionId}::uuid
+        returning id, amount::text, version
+      `.execute(trx);
+      
+      const result = updated.rows[0];
+      if (!result) throw new InternalServerErrorException({ code: "INTERNAL" });
+
+      const attachmentsCount = await sql<{ count: number }>`
+        select count(*) as count from attachments a
+         where a.tenant_id = ${tenantId}::uuid and a.contribution_id = ${contributionId}::uuid
+           and a.status = 'CONFIRMED'
+      `.execute(trx);
+
+      const response: ContributionItem = {
+        id: result.id,
+        occurredOn,
+        amount: result.amount,
+        member,
+        type: { id: type.id, description: type.description, category: type.category },
+        method: { id: method.id, description: method.description, kind: method.kind },
+        observation,
+        status: "ACTIVE",
+        attachmentsCount: attachmentsCount.rows[0]?.count ?? 0,
+        version: result.version,
+      };
+
+      await this.audit.record(trx, {
+        action: "CONTRIBUTION_UPDATED",
+        entity: "contribution",
+        entityId: result.id,
+        before: {
+          occurredOn: row.occurred_on,
+          amount: row.amount,
+          member: row.member_id ? { id: row.member_id, name: row.member_name } : null,
+          type: { id: row.contribution_type_id, description: row.type_description, category: row.category_snapshot },
+          method: { id: row.payment_method_id, description: row.method_description, kind: row.kind_snapshot },
+          observation: row.observation,
+        },
+        after: response,
+      });
+
+      return response;
+    });
+  }
+
+  async void(
+    tenantId: string,
+    userId: string,
+    contributionId: string,
+    payload: DeleteContributionDto,
+  ): Promise<{ id: string; status: string; voidReason: string | null }> {
+    return this.transactions.withTenantTx({ tenantId, userId }, async (trx) => {
+      const existing = await sql<{
+        id: string;
+        status: string;
+        version: number;
+      }>`
+        select id, status, version from contributions
+         where tenant_id = ${tenantId}::uuid and id = ${contributionId}::uuid
+           for update
+      `.execute(trx);
+      
+      const row = existing.rows[0];
+      if (!row) throw new NotFoundException({ code: "CONTRIBUTION_NOT_FOUND" });
+      if (row.status === "VOIDED") throw new ConflictException({ code: "ALREADY_VOIDED" });
+      if (row.version !== payload.version) throw new ConflictException({ code: "VERSION_MISMATCH" });
+
+      const voided = await sql<{ id: string }>`
+        update contributions
+           set status = 'VOIDED',
+               void_reason = ${payload.voidReason ?? null},
+               version = version + 1,
+               updated_by = ${userId}::uuid,
+               updated_at = now()
+         where tenant_id = ${tenantId}::uuid and id = ${contributionId}::uuid
+        returning id
+      `.execute(trx);
+      
+      if (!voided.rows[0]) throw new InternalServerErrorException({ code: "INTERNAL" });
+
+      await this.audit.record(trx, {
+        action: "CONTRIBUTION_VOIDED",
+        entity: "contribution",
+        entityId: contributionId,
+        after: { status: "VOIDED", voidReason: payload.voidReason ?? null },
+      });
+
+      return {
+        id: contributionId,
+        status: "VOIDED",
+        voidReason: payload.voidReason ?? null,
+      };
+    });
+  }
 }
+
