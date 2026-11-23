@@ -374,7 +374,7 @@ export class ContributionsService {
           join payment_methods pm on pm.tenant_id = c.tenant_id and pm.id = c.payment_method_id
           left join members m on m.tenant_id = c.tenant_id and m.id = c.member_id
          where c.tenant_id = ${tenantId}::uuid and c.id = ${contributionId}::uuid
-           for update
+           for update of c
       `.execute(trx);
       
       const row = existing.rows[0];
@@ -509,7 +509,7 @@ export class ContributionsService {
       }>`
         select id, status, version from contributions
          where tenant_id = ${tenantId}::uuid and id = ${contributionId}::uuid
-           for update
+           for update of contributions
       `.execute(trx);
       
       const row = existing.rows[0];
