@@ -4,6 +4,7 @@ import type { Content, TableCell, TDocumentDefinitions } from "pdfmake/interface
 import { AuthenticatedUser } from "../../common/auth/authenticated-user";
 import { TenantTransactions } from "../../common/database/database.module";
 import { renderReport, reportHeader, reportLayout, reportSignatures, reportSummary } from "../../common/pdf/report-layout";
+import { contributionsReportSignaturesConfig } from "../../common/pdf/report-signatures-config";
 import { ContributionReportQueryDto } from "./contributions.dto";
 
 interface ReportHeader {
@@ -151,11 +152,7 @@ export function reportDocument(
       { title: "DESTINAÇÃO", entries: categoryEntries.filter(({ category }) => destinations.has(category)) },
     ]),
   );
-  content.push(...reportSignatures([
-    ["1º Tesoureiro(a)", "2º Tesoureiro(a)"],
-    ["Conselho Fiscal 1", "Conselho Fiscal 2", "Conselho Fiscal 3"],
-    ["Conselho Fiscal 4", "Conselho Fiscal 5"],
-  ]));
+  content.push(...reportSignatures(contributionsReportSignaturesConfig.rows));
   return reportLayout(content);
 }
 
