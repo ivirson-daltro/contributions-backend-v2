@@ -24,7 +24,7 @@ O guard global valida `Authorization: Bearer <access-token>` com a JWKS do Supab
 
 ## Contribuicoes
 
-`GET /v1/contributions` lista lancamentos com filtros `q`, `memberId`, `typeId`, `methodId`, `from`, `to`, `status`, paginacao e ordenacao. Sem `from` e `to`, retorna contribuicoes de todos os periodos; ao informar uma ou ambas as datas, usa somente os limites enviados (inclusivos). `meta.totals` considera todas as contribuicoes ativas do filtro, nao apenas a pagina. `POST /v1/contributions` registra uma contribuicao e exige `Idempotency-Key`; o tipo pode exigir membro, e data futura depende da configuracao do tenant. Para preencher o formulario, use `GET /v1/catalogs/contribution-types`, `GET /v1/catalogs/payment-methods` (ambos paginados e somente ativos) e `GET /v1/members/lookup?q=` (ate 20 membros ativos). Essas rotas exigem JWT, `X-Tenant-Id` e as permissoes correspondentes. Nesta etapa, anexos, criacao rapida de membro, edicao e cancelamento ainda nao estao disponiveis; `attachmentIds`, se enviado, deve ser vazio. Consulte `/docs` para detalhes.
+`GET /v1/contributions` lista lancamentos com filtros `q`, `memberId`, `typeId`, `methodId`, `from`, `to`, `status`, paginacao e ordenacao. Sem `from` e `to`, retorna contribuicoes de todos os periodos; ao informar uma ou ambas as datas, usa somente os limites enviados (inclusivos). `meta.totals` considera todas as contribuicoes ativas do filtro, nao apenas a pagina. `POST /v1/contributions` registra uma contribuicao e exige `Idempotency-Key`; o tipo pode exigir membro, e data futura depende da configuracao do tenant. Para preencher o formulario, use `GET /v1/catalogs/contribution-types`, `GET /v1/catalogs/payment-methods` (ambos paginados e somente ativos) e `GET /v1/members/lookup?q=` (ate 20 membros ativos). Essas rotas exigem JWT, `X-Tenant-Id` e as permissoes correspondentes. Anexos ainda nao sao suportados; `attachmentIds`, se enviado, deve ser vazio. Consulte `/docs` para detalhes.
 
 `GET /v1/members/lookup` aceita `page` (padrao 1) e retorna ate 20 membros ativos por pagina, em ordem de nome e ID. Uma pagina com menos de 20 itens indica o fim dos resultados; `q` continua opcional.
 
@@ -33,6 +33,14 @@ O guard global valida `Authorization: Bearer <access-token>` com a JWKS do Supab
 `GET /v1/contributions/report?from=2026-11-01&to=2026-11-30` retorna diretamente um PDF das contribuicoes ativas, agrupadas por meio de pagamento, com totais por classificacao historica. Os nomes de tipos e meios sao os atuais; as classificacoes sao as registradas no lancamento. As duas datas sao obrigatorias e inclusivas; o intervalo maximo e de 366 dias. Exige JWT, `X-Tenant-Id` e a permissao `contributions-report:generate` (sujeita ao MFA configurado para o perfil).
 
 O cabecalho do PDF usa `assets/logo.png`; o build copia a imagem para `dist/assets/logo.png`, que deve acompanhar a aplicacao na implantacao. Ao final, o resumo apresenta entradas por classificacao do meio de pagamento, contribuicoes por categoria e destinacoes para construcao e missoes, seguido de espacos para assinatura do 1º e 2º tesoureiros e de cinco membros do conselho fiscal. Cabecalho, layout, resumo, assinaturas e geracao do PDF sao compartilhados em `src/common/pdf/report-layout.ts` para outros relatorios.
+
+## Membros
+
+`GET /v1/members` lista membros com paginacao e filtros `q`, `memberTypeId` e `status` (padrao `ACTIVE`, ou `ALL`); `sort` aceita `name`, `type` e `createdAt`. `GET /v1/members/:id` retorna os detalhes para quem tem `members:read-detail`. `GET /v1/catalogs/member-types` lista os tipos ativos.
+
+`POST /v1/members` exige `name` e `memberTypeId`. `PUT /v1/members/:id` atualiza apenas os campos informados; `DELETE /v1/members/:id` faz exclusao logica e retorna `409 MEMBER_HAS_ACCESS` se houver acesso ativo vinculado. Secretaria e administrador podem gerenciar todos os campos; tesoureiro pode criar somente com nome e tipo, e alterar nome/tipo ou excluir apenas membros que ele criou. Os registros antigos sem criador nao podem ser alterados nem excluidos por tesoureiro. Usuarios com varios perfis recebem a uniao das permissoes.
+
+Para criacao com dados completos, possiveis duplicatas geram `409 POSSIBLE_DUPLICATE` com candidatos em `errors`; apos confirmacao, `POST /v1/members?force=true` permite prosseguir. Os endpoints exigem JWT, `X-Tenant-Id` e as permissoes correspondentes. A migration `20261124120000_members_created_by.sql` deve ser aplicada antes de usar o CRUD.
 
 ## Banco de dados
 

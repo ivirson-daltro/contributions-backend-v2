@@ -330,7 +330,8 @@ O código autoriza por **permissão** (`@RequirePermissions('expenses:write')`),
 | `fees:calculate` | ✔ | ✔ | | | |
 | `members:read-list` | ✔ | ✔ | ✔ | ✔ | ✔ |
 | `members:read-detail` | ✔ | ✔ | ✔ | | ✔ |
-| `members:write` | ✔ | ✔ | ✔ | | |
+| `members:manage` | ✔ | ✔ | ✔ | | |
+| `members:write` | ✔ | | ✔ | | |
 | `contributors-report:read` | ✔ | | | | ✔ |
 | `users:manage` | ✔ | | | | |
 | `catalogs:read` | ✔ | ✔ | ✔¹ | ✔ | ✔ |
@@ -537,6 +538,7 @@ Auditoria: `INVITATION_CREATED/RESENT/REVOKED/ACCEPTED`, `MEMBERSHIP_ROLES_CHANG
 - **RN-6.4** `status`: `ACTIVE, INACTIVE, TRANSFERRED, DECEASED`; só `ACTIVE` aparece em seletores de novos lançamentos.
 - **RN-6.5** Dados sensíveis (nascimento, batismo, endereço) só com `members:read-detail`; `consent_at` registra o consentimento (LGPD).
 - **RN-6.6** Importação CSV: validação linha a linha, prévia com erros/duplicatas, confirmação explícita; processada por job.
+- **RN-6.7** Tesoureiro pode cadastrar somente nome e tipo, e editar esses campos ou excluir logicamente apenas membros criados por ele. Secretaria e administrador podem gerenciar todos os membros e campos. Registros anteriores sem criador ficam restritos à secretaria e ao administrador; perfis múltiplos recebem a união das permissões.
 
 **Back-end**
 | Método | Rota | Permissão | Descrição |
@@ -544,8 +546,8 @@ Auditoria: `INVITATION_CREATED/RESENT/REVOKED/ACCEPTED`, `MEMBERSHIP_ROLES_CHANG
 | GET | `/members` | `members:read-list` | `q` (busca parcial por trigrama em `app_norm(name)`), `memberTypeId`, `status`, `page`, `sort=name|type|createdAt` |
 | GET | `/members/lookup?q=` | `members:read-list` | Autocomplete leve (≤ 20): `{id, name, memberType}` |
 | GET | `/members/:id` | `members:read-detail` | Todos os campos |
-| POST | `/members` | `members:write` | Campos: `name, memberTypeId, status?, phone, email, gender, birthDate, entryDate, baptismDate, zipCode, street, number, complement, neighborhood, city, state, consent?` |
-| PUT / DELETE | `/members/:id` | `members:write` | — |
+| POST | `/members` | `members:manage` | Campos: `name, memberTypeId, status?, phone, email, gender, birthDate, entryDate, baptismDate, zipCode, street, number, complement, neighborhood, city, state, consent?`; restrições da RN-6.7 |
+| PUT / DELETE | `/members/:id` | `members:manage` | Edição parcial ou exclusão lógica, sujeitas à RN-6.7 |
 | POST | `/members/import` | `members:write` | `multipart` CSV → `202 { jobId }` |
 | GET / POST | `/members/import/:jobId` · `/members/import/:jobId/confirm` | `members:write` | Progresso/erros; confirmação |
 

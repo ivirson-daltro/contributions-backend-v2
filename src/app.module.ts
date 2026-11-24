@@ -10,6 +10,7 @@ import { HealthModule } from "./modules/health/health.module";
 import { DashboardModule } from "./modules/dashboard/dashboard.module";
 import { ContributionsModule } from "./modules/contributions/contributions.module";
 import { PlatformModule } from "./modules/platform/platform.module";
+import { MembersModule } from "./modules/members/members.module";
 
 @Module({
   imports: [
@@ -21,6 +22,7 @@ import { PlatformModule } from "./modules/platform/platform.module";
     PlatformModule,
     DashboardModule,
     ContributionsModule,
+    MembersModule,
     HealthModule,
     ThrottlerModule.forRoot([{ ttl: 60_000, limit: 100 }]),
   ],
