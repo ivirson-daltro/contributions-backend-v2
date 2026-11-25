@@ -114,7 +114,7 @@ export class PlatformService {
           ${payload.slug},
           ${payload.name},
           ${payload.document ?? null},
-          ${payload.timezone ?? "America/Sao_Paulo"},
+          "America/Sao_Paulo",
           ${payload.adminEmail},
           ${payload.adminName ?? payload.name},
           ${tokenHash},

@@ -11,6 +11,7 @@ import { DashboardModule } from "./modules/dashboard/dashboard.module";
 import { ContributionsModule } from "./modules/contributions/contributions.module";
 import { PlatformModule } from "./modules/platform/platform.module";
 import { MembersModule } from "./modules/members/members.module";
+import { SettingsModule } from "./modules/settings/settings.module";
 
 @Module({
   imports: [
@@ -23,6 +24,7 @@ import { MembersModule } from "./modules/members/members.module";
     DashboardModule,
     ContributionsModule,
     MembersModule,
+    SettingsModule,
     HealthModule,
     ThrottlerModule.forRoot([{ ttl: 60_000, limit: 100 }]),
   ],

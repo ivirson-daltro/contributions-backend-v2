@@ -69,6 +69,13 @@ export function mapDatabaseError(
           detail: "Descrição já cadastrada.",
         };
       }
+      if (constraint === "fee_rules_name_uk") {
+        return {
+          status: 409,
+          code: "DUPLICATE_NAME",
+          detail: "Já existe uma regra com este nome.",
+        };
+      }
       if (constraint === "monthly_balances_period_uk") {
         return {
           status: 409,
