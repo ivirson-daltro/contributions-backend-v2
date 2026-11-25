@@ -1,4 +1,3 @@
-import { join } from "node:path";
 // pdfmake uses export = and this project does not enable esModuleInterop.
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 import PdfPrinter = require("pdfmake");
@@ -8,6 +7,7 @@ interface ReportHeader {
   name: string;
   document: string | null;
   timezone: string;
+  logo?: string | null;
 }
 
 export function reportHeader(
@@ -17,8 +17,11 @@ export function reportHeader(
   issuer: string,
   generatedAt: Date,
 ): Content[] {
+  const logo: Content[] = header.logo
+    ? [{ image: header.logo, fit: [114, 33], alignment: "center", margin: [0, 0, 0, 8] }]
+    : [];
   return [
-    { image: join(__dirname, "..", "..", "assets", "logo.png"), fit: [114, 33], alignment: "center", margin: [0, 0, 0, 8] },
+    ...logo,
     { text: header.name, style: "church" },
     ...(header.document ? [{ text: `Documento: ${header.document}`, alignment: "center" as const }] : []),
     { text: title, style: "title" },

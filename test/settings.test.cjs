@@ -76,6 +76,54 @@ test("logo escura usa a clara apenas quando não existe uma imagem escura", asyn
   assert.equal(downloads.at(-1), "tenant-a/light");
 });
 
+test("relatórios usam somente a logo clara do tenant, com conversão de WebP", async () => {
+  const sharp = require("sharp");
+  const png = await sharp({ create: { width: 5, height: 3, channels: 3, background: "#123456" } }).png().toBuffer();
+  const jpeg = await sharp(png).jpeg().toBuffer();
+  const webp = await sharp(png).webp().toBuffer();
+  const objects = new Map([
+    ["a/light", png], ["b/light", jpeg], ["c/light", webp], ["d/dark", png],
+  ]);
+  const metadata = new Map([
+    ["a:LIGHT", { object_key: "a/light", content_type: "image/png" }],
+    ["b:LIGHT", { object_key: "b/light", content_type: "image/jpeg" }],
+    ["c:LIGHT", { object_key: "c/light", content_type: "image/webp" }],
+    ["d:DARK", { object_key: "d/dark", content_type: "image/png" }],
+  ]);
+  const contexts = [];
+  const service = new LogoService(transactions(async ({ parameters }) => ({
+    rows: metadata.has(`${parameters[0]}:${parameters[1]}`) ? [metadata.get(`${parameters[0]}:${parameters[1]}`)] : [],
+  }), contexts), { record: async () => {} });
+  const downloads = [];
+  service.storage = {
+    download: async (key) => { downloads.push(key); return { data: new Blob([objects.get(key)]), error: null }; },
+  };
+  const { reportHeader, reportLayout, renderReport } = require("../dist/common/pdf/report-layout");
+  for (const [tenant, format] of [["a", "png"], ["b", "jpeg"], ["c", "png"]]) {
+    const image = await service.getForReport(tenant, "user");
+    assert.ok(image.startsWith(`data:image/${format};base64,`));
+    const bytes = Buffer.from(image.split(",")[1], "base64");
+    assert.equal((await sharp(bytes).metadata()).format, format);
+    const content = reportHeader({ name: "Igreja", document: null, timezone: "UTC", logo: image }, "Relatório", "2026", "Emissor", new Date());
+    const pdf = await renderReport(reportLayout(content));
+    assert.match(pdf.toString("latin1"), /\/Subtype\s*\/Image\b/);
+  }
+  assert.equal(await service.getForReport("d", "user"), null);
+  assert.deepEqual(downloads, ["a/light", "b/light", "c/light"]);
+  assert.deepEqual(contexts.map((context) => context.tenantId), ["a", "b", "c", "d"]);
+});
+
+test("falhas de armazenamento ou conversão da logo do relatório não são ocultadas", async () => {
+  const service = new LogoService(transactions(async () => ({
+    rows: [{ object_key: "tenant/light", content_type: "image/webp" }],
+  })), { record: async () => {} });
+  service.logger = { error: () => {} };
+  service.storage = { download: async () => ({ data: null, error: { message: "falha" } }) };
+  await assert.rejects(service.getForReport("tenant", "user"), code("LOGO_STORAGE_ERROR"));
+  service.storage = { download: async () => ({ data: new Blob(["webp inválido"]), error: null }) };
+  await assert.rejects(service.getForReport("tenant", "user"), code("LOGO_PROCESSING_ERROR"));
+});
+
 test("substituir logo de um tema preserva a imagem do outro tema", async () => {
   const rows = new Map([["LIGHT", "tenant-a/light"], ["DARK", "tenant-a/dark"]]);
   const audits = [];

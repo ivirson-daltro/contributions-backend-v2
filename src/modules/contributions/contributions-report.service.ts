@@ -6,12 +6,14 @@ import { TenantTransactions } from "../../common/database/database.module";
 import { renderReport, reportHeader, reportLayout, reportSignatures, reportSummary } from "../../common/pdf/report-layout";
 import { contributionsReportSignaturesConfig } from "../../common/pdf/report-signatures-config";
 import { ContributionReportQueryDto } from "./contributions.dto";
+import { LogoService } from "../settings/logo.service";
 
 interface ReportHeader {
   name: string;
   document: string | null;
   timezone: string;
   display_name: string | null;
+  logo?: string | null;
 }
 
 export interface ReportRow {
@@ -158,7 +160,7 @@ export function reportDocument(
 
 @Injectable()
 export class ContributionsReportService {
-  constructor(private readonly transactions: TenantTransactions) {}
+  constructor(private readonly transactions: TenantTransactions, private readonly logos: LogoService) {}
 
   async generate(tenantId: string, user: AuthenticatedUser, query: ContributionReportQueryDto): Promise<Buffer> {
     const { header, rows } = await this.transactions.withTenantTx(
@@ -189,7 +191,8 @@ export class ContributionsReportService {
         return { header, rows: result.rows };
       },
     );
-    const definition = reportDocument(header, header.display_name || user.email || user.userId, query, rows, new Date());
+    const logo = await this.logos.getForReport(tenantId, user.userId);
+    const definition = reportDocument({ ...header, logo }, header.display_name || user.email || user.userId, query, rows, new Date());
     return renderReport(definition);
   }
 }

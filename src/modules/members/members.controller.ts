@@ -1,7 +1,7 @@
-import { Body, Controller, Delete, Get, Param, ParseUUIDPipe, Post, Put, Query } from "@nestjs/common";
+import { Body, Controller, Delete, Get, Header, Param, ParseUUIDPipe, Post, Put, Query, StreamableFile } from "@nestjs/common";
 import {
   ApiBearerAuth, ApiBody, ApiConflictResponse, ApiHeader, ApiOkResponse,
-  ApiOperation, ApiQuery, ApiTags,
+  ApiOperation, ApiProduces, ApiQuery, ApiTags,
 } from "@nestjs/swagger";
 import type { SchemaObject } from "@nestjs/swagger/dist/interfaces/open-api-spec.interface";
 import { AuthenticatedUser } from "../../common/auth/authenticated-user";
@@ -11,6 +11,8 @@ import { CurrentTenant } from "../../common/tenant/current-tenant.decorator";
 import { TenantRequestContext } from "../../common/tenant/tenant-context";
 import { CreateMemberDto, CreateMemberQueryDto, MemberQueryDto, UpdateMemberDto } from "./members.dto";
 import { MembersService } from "./members.service";
+import { ContributorReportQueryDto, ContributorYearQueryDto } from "./contributors.dto";
+import { ContributorsService } from "./contributors.service";
 
 const memberProperties: Record<string, SchemaObject> = {
   name: { type: "string", maxLength: 120 },
@@ -37,7 +39,52 @@ const memberProperties: Record<string, SchemaObject> = {
 @ApiHeader({ name: "x-tenant-id", required: true })
 @Controller("members")
 export class MembersController {
-  constructor(private readonly service: MembersService) {}
+  constructor(private readonly service: MembersService, private readonly contributors: ContributorsService) {}
+
+  @Get("contributors/year/report")
+  @RequirePermissions("contributors-report:read")
+  @Header("Cache-Control", "no-store")
+  @ApiOperation({ summary: "Gera PDF anual de membros contribuintes" })
+  @ApiQuery({ name: "year", required: true, description: "Ano com quatro dígitos." })
+  @ApiQuery({ name: "q", required: false, description: "Busca parcial pelo nome." })
+  @ApiQuery({ name: "sort", required: false, enum: ["name", "type"] })
+  @ApiQuery({ name: "order", required: false, enum: ["asc", "desc"] })
+  @ApiProduces("application/pdf")
+  @ApiOkResponse({ description: "PDF anual.", schema: { type: "string", format: "binary" } })
+  async contributorsReport(
+    @CurrentUser() user: AuthenticatedUser, @CurrentTenant() tenant: TenantRequestContext,
+    @Query() query: ContributorReportQueryDto,
+  ): Promise<StreamableFile> {
+    const pdf = await this.contributors.report(tenant.tenantId!, user, query);
+    return new StreamableFile(pdf, {
+      type: "application/pdf",
+      disposition: `attachment; filename="contribuintes-${query.year}.pdf"`,
+    });
+  }
+
+  @Get("contributors/year")
+  @RequirePermissions("contributors-report:read")
+  @ApiOperation({ summary: "Lista membros contribuintes por ano e mês" })
+  @ApiQuery({ name: "year", required: true, description: "Ano com quatro dígitos." })
+  @ApiQuery({ name: "q", required: false, description: "Busca parcial pelo nome." })
+  @ApiQuery({ name: "page", required: false, type: Number })
+  @ApiQuery({ name: "pageSize", required: false, type: Number, description: "De 1 a 100; padrão 20." })
+  @ApiQuery({ name: "sort", required: false, enum: ["name", "type"] })
+  @ApiQuery({ name: "order", required: false, enum: ["asc", "desc"] })
+  @ApiOkResponse({ schema: { example: {
+    data: [{
+      id: "00000000-0000-4000-8000-000000000001", name: "Ana",
+      memberType: { id: "00000000-0000-4000-8000-000000000002", description: "Membro" },
+      months: [true, false, false, false, false, false, false, false, false, false, false, true],
+    }],
+    meta: { page: 1, pageSize: 20, total: 1 },
+  } } })
+  contributorsYear(
+    @CurrentUser() user: AuthenticatedUser, @CurrentTenant() tenant: TenantRequestContext,
+    @Query() query: ContributorYearQueryDto,
+  ) {
+    return this.contributors.list(tenant.tenantId!, user.userId, query);
+  }
 
   @Get()
   @RequirePermissions("members:read-list")

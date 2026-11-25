@@ -2,6 +2,9 @@ import { BadRequestException, Injectable, InternalServerErrorException, Logger, 
 import { createClient } from "@supabase/supabase-js";
 import { randomUUID } from "node:crypto";
 import { sql } from "kysely";
+// sharp uses export = and this project does not enable esModuleInterop.
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+import sharp = require("sharp");
 import { AuditService } from "../../common/audit/audit.service";
 import { TenantTransactions } from "../../common/database/database.module";
 import { environment } from "../../config/env";
@@ -27,6 +30,27 @@ export class LogoService {
   constructor(private readonly transactions: TenantTransactions, private readonly audit: AuditService) {}
 
   async get(tenantId: string, userId: string, theme: LogoTheme = LogoTheme.Light, fallback = true) {
+    const logo = await this.find(tenantId, userId, theme, fallback);
+    if (!logo) throw new NotFoundException({ code: "LOGO_NOT_FOUND" });
+    return logo;
+  }
+
+  async getForReport(tenantId: string, userId: string): Promise<string | null> {
+    const logo = await this.find(tenantId, userId, LogoTheme.Light, false);
+    if (!logo) return null;
+    if (logo.contentType !== "image/webp") {
+      return `data:${logo.contentType};base64,${logo.data.toString("base64")}`;
+    }
+    try {
+      const png = await sharp(logo.data).png().toBuffer();
+      return `data:image/png;base64,${png.toString("base64")}`;
+    } catch (error) {
+      this.logger.error(`Falha ao converter logo do tenant ${tenantId}`, error instanceof Error ? error.stack : undefined);
+      throw new InternalServerErrorException({ code: "LOGO_PROCESSING_ERROR" });
+    }
+  }
+
+  private async find(tenantId: string, userId: string, theme: LogoTheme, fallback: boolean) {
     const row = await this.transactions.withTenantTx({ tenantId, userId }, async (trx) => {
       const result = await sql<{ object_key: string; content_type: string }>`
         select object_key, content_type from tenant_logos
@@ -42,7 +66,7 @@ export class LogoService {
       }
       return undefined;
     });
-    if (!row) throw new NotFoundException({ code: "LOGO_NOT_FOUND" });
+    if (!row) return null;
     const { data, error } = await this.storage.download(row.object_key);
     if (error || !data) {
       this.logger.error(`Falha ao carregar logo do tenant ${tenantId}: ${error?.message ?? "objeto ausente"}`);

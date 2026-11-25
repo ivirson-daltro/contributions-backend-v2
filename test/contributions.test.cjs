@@ -331,15 +331,18 @@ test("PDF usa dados ativos do tenant e datas inclusivas; mantém agrupamento e t
       if (query.includes("from contributions c")) rows = result;
       return { rows: result };
     });
+    const logo = `data:image/png;base64,${(await require("sharp")({ create: { width: 3, height: 3, channels: 3, background: "#123456" } }).png().toBuffer()).toString("base64")}`;
+    const logoCalls = [];
     const service = new ContributionsReportService({
       withTenantTx: async (context, callback) => {
         txContext = context;
         return callback({ getExecutor: () => executor });
       },
-    });
+    }, { getForReport: async (tenantId, userId) => { logoCalls.push({ tenantId, userId }); return logo; } });
     const period = { from: "2026-11-01", to: "2026-11-30" };
     const pdf = await service.generate("a", { userId: "u" }, period);
     assert.deepEqual(txContext, { tenantId: "a", userId: "u" });
+    assert.deepEqual(logoCalls[0], { tenantId: "a", userId: "u" });
     assert.equal(pdf.subarray(0, 5).toString(), "%PDF-");
     assert.match(pdf.toString("latin1"), /\/Subtype\s*\/Image\b/);
     assert.equal(rows.length, 3);
@@ -362,17 +365,21 @@ test("PDF usa dados ativos do tenant e datas inclusivas; mantém agrupamento e t
   }
 });
 
-test("logo é incluída no topo e copiada para o build", () => {
-  const fs = require("node:fs");
-  const path = require("node:path");
+test("logo da igreja é incluída no topo apenas quando disponível", () => {
+  const image = "data:image/png;base64,dGVzdA==";
   const definition = reportDocument(
-    { name: "Igreja", document: null, timezone: "UTC", display_name: null },
+    { name: "Igreja", document: null, timezone: "UTC", display_name: null, logo: image },
     "Emissor", { from: "2026-11-01", to: "2026-11-30" }, [], new Date(),
   );
   const logo = definition.content[0];
   assert.equal(logo.alignment, "center");
   assert.deepEqual(logo.fit, [114, 33]);
-  assert.deepEqual(fs.readFileSync(logo.image), fs.readFileSync(path.join(__dirname, "..", "assets", "logo.png")));
+  assert.equal(logo.image, image);
+  const withoutLogo = reportDocument(
+    { name: "Igreja", document: null, timezone: "UTC", display_name: null },
+    "Emissor", { from: "2026-11-01", to: "2026-11-30" }, [], new Date(),
+  );
+  assert.ok(!withoutLogo.content.some((item) => item.image));
 });
 
 test("relatório termina com linhas para tesoureiros e cinco membros do conselho fiscal", async () => {
@@ -461,7 +468,7 @@ test("relatório com mais de 2000 contribuições é gerado diretamente sem trun
   }));
   const service = new ContributionsReportService({
     withTenantTx: async (_context, callback) => callback({ getExecutor: () => executor }),
-  });
+  }, { getForReport: async () => null });
   const pdf = await service.generate("a", { userId: "u" }, { from: "2026-11-01", to: "2026-11-30" });
   assert.equal(pdf.subarray(0, 5).toString(), "%PDF-");
   const text = pdfText(pdf);

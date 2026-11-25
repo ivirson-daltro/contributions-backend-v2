@@ -187,6 +187,8 @@ test("rotas de membros e catálogo são registradas sem encobrir lookup e all", 
     assert.ok(document.paths["/v1/members/{id}"].get);
     assert.ok(document.paths["/v1/members/{id}"].put);
     assert.ok(document.paths["/v1/members/{id}"].delete);
+    assert.ok(document.paths["/v1/members/contributors/year"].get);
+    assert.ok(document.paths["/v1/members/contributors/year/report"].get);
     assert.ok(document.paths["/v1/catalogs/member-types"].get);
     await app.init();
     const routes = app.getHttpAdapter().getInstance().router.stack
@@ -196,6 +198,8 @@ test("rotas de membros e catálogo são registradas sem encobrir lookup e all", 
     assert.ok(routes.indexOf("/v1/members/all") >= 0);
     assert.ok(routes.indexOf("/v1/members/:id") > routes.indexOf("/v1/members/lookup"));
     assert.ok(routes.indexOf("/v1/members/:id") > routes.indexOf("/v1/members/all"));
+    assert.ok(routes.includes("/v1/members/contributors/year"));
+    assert.ok(routes.includes("/v1/members/contributors/year/report"));
   } finally {
     await app.close();
   }

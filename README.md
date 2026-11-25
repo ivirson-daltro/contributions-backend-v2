@@ -32,7 +32,7 @@ O guard global valida `Authorization: Bearer <access-token>` com a JWKS do Supab
 
 `GET /v1/contributions/report?from=2026-11-01&to=2026-11-30` retorna diretamente um PDF das contribuicoes ativas, agrupadas por meio de pagamento, com totais por classificacao historica. Os nomes de tipos e meios sao os atuais; as classificacoes sao as registradas no lancamento. As duas datas sao obrigatorias e inclusivas; o intervalo maximo e de 366 dias. Exige JWT, `X-Tenant-Id` e a permissao `contributions-report:generate` (sujeita ao MFA configurado para o perfil).
 
-O cabecalho do PDF usa `assets/logo.png`; o build copia a imagem para `dist/assets/logo.png`, que deve acompanhar a aplicacao na implantacao. Ao final, o resumo apresenta entradas por classificacao do meio de pagamento, contribuicoes por categoria e destinacoes para construcao e missoes, seguido de espacos para assinatura do 1º e 2º tesoureiros e de cinco membros do conselho fiscal. Cabecalho, layout, resumo, assinaturas e geracao do PDF sao compartilhados em `src/common/pdf/report-layout.ts` para outros relatorios.
+Os relatorios usam no cabecalho a logo clara cadastrada pela igreja; se nao houver logo clara, o cabecalho e gerado sem imagem. Logos WebP sao convertidas para PNG ao gerar o PDF. Ao final do relatorio de contribuicoes, o resumo apresenta entradas por classificacao do meio de pagamento, contribuicoes por categoria e destinacoes para construcao e missoes, seguido de espacos para assinatura dos tesoureiros e membros do conselho fiscal. Cabecalho, layout, resumo, assinaturas e geracao do PDF sao compartilhados em `src/common/pdf/report-layout.ts` para outros relatorios.
 
 ## Membros
 
@@ -41,6 +41,8 @@ O cabecalho do PDF usa `assets/logo.png`; o build copia a imagem para `dist/asse
 `POST /v1/members` exige `name` e `memberTypeId`. `PUT /v1/members/:id` atualiza apenas os campos informados; `DELETE /v1/members/:id` faz exclusao logica e retorna `409 MEMBER_HAS_ACCESS` se houver acesso ativo vinculado. Secretaria e administrador podem gerenciar todos os campos; tesoureiro pode criar somente com nome e tipo, e alterar nome/tipo ou excluir apenas membros que ele criou. Os registros antigos sem criador nao podem ser alterados nem excluidos por tesoureiro. Usuarios com varios perfis recebem a uniao das permissoes.
 
 Para criacao com dados completos, possiveis duplicatas geram `409 POSSIBLE_DUPLICATE` com candidatos em `errors`; apos confirmacao, `POST /v1/members?force=true` permite prosseguir. Os endpoints exigem JWT, `X-Tenant-Id` e as permissoes correspondentes. A migration `20261124120000_members_created_by.sql` deve ser aplicada antes de usar o CRUD.
+
+`GET /v1/members/contributors/year?year=2026` lista contribuintes do ano, com `months` contendo 12 booleanos de janeiro a dezembro; aceita `q`, `page`, `pageSize`, `sort=name|type` e `order=asc|desc`. Conta apenas membros nao excluidos com contribuicoes ativas de tipos atualmente marcados `countsAsContributor`, independentemente da categoria; membros inativos tambem aparecem e lancamentos sem membro sao ignorados. `GET /v1/members/contributors/year/report?year=2026` gera o PDF em retrato com os mesmos dados e aceita `q`, `sort` e `order`. Ambos exigem JWT, `X-Tenant-Id` e `contributors-report:read`; nesta etapa nao ha listagem mensal nem geracao assincrona.
 
 ## Configuracoes da igreja
 

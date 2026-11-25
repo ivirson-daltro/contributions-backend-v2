@@ -5,5 +5,5 @@ import { LogoService } from "./logo.service";
 import { CatalogsService } from "./catalogs.service";
 import { CatalogsController } from "./catalogs.controller";
 
-@Module({ controllers: [SettingsController, CatalogsController], providers: [SettingsService, LogoService, CatalogsService] })
+@Module({ controllers: [SettingsController, CatalogsController], providers: [SettingsService, LogoService, CatalogsService], exports: [LogoService] })
 export class SettingsModule {}
