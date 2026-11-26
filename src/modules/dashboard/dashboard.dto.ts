@@ -10,3 +10,9 @@ export const dashboardSeriesQuerySchema = z
 export class DashboardSeriesQueryDto extends createZodDto(
   dashboardSeriesQuerySchema,
 ) {}
+
+export const dashboardCardSchema = z.object({
+  contributionTypeId: z.string().uuid().nullable(),
+}).strict();
+
+export class DashboardCardDto extends createZodDto(dashboardCardSchema) {}

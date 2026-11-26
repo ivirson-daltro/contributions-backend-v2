@@ -1,6 +1,7 @@
-import { Controller, Get, Query } from "@nestjs/common";
+import { Body, Controller, Get, Put, Query } from "@nestjs/common";
 import {
   ApiBearerAuth,
+  ApiBody,
   ApiHeader,
   ApiOkResponse,
   ApiOperation,
@@ -12,7 +13,7 @@ import { CurrentUser } from "../../common/auth/current-user.decorator";
 import { CurrentTenant } from "../../common/tenant/current-tenant.decorator";
 import { TenantRequestContext } from "../../common/tenant/tenant-context";
 import { RequirePermissions } from "../../common/authorization/require-permissions.decorator";
-import { DashboardSeriesQueryDto } from "./dashboard.dto";
+import { DashboardCardDto, DashboardSeriesQueryDto } from "./dashboard.dto";
 import { DashboardService } from "./dashboard.service";
 
 @ApiTags("dashboard")
@@ -69,6 +70,12 @@ export class DashboardController {
         byKind: { week: {}, previousWeek: {}, month: {} },
         members: { active: 0, contributorsMonth: 0 },
         constructionOffering: { total: "0.00", count: 0 },
+        customCard: {
+          contributionTypeId: null,
+          contributionTypeName: null,
+          total: null,
+          contributionTypes: [{ id: "00000000-0000-4000-8000-000000000001", description: "Missões" }],
+        },
         payables: {
           overdueCount: 1,
           next7DaysCount: 1,
@@ -104,6 +111,20 @@ export class DashboardController {
       user.userId,
       tenant.permissions.includes("payables:read"),
     );
+  }
+
+  @Put("card")
+  @RequirePermissions("tenant-settings:write")
+  @ApiOperation({ summary: "Personaliza o último indicador para toda a igreja" })
+  @ApiBody({ schema: { type: "object", required: ["contributionTypeId"], properties: {
+    contributionTypeId: { type: "string", format: "uuid", nullable: true },
+  }, additionalProperties: false } })
+  updateCard(
+    @CurrentUser() user: AuthenticatedUser,
+    @CurrentTenant() tenant: TenantRequestContext,
+    @Body() body: DashboardCardDto,
+  ) {
+    return this.dashboardService.updateCard(tenant.tenantId!, user.userId, body.contributionTypeId);
   }
 
   @Get("series")

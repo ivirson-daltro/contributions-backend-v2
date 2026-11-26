@@ -1,5 +1,6 @@
-import { Injectable, InternalServerErrorException } from "@nestjs/common";
+import { BadRequestException, Injectable, InternalServerErrorException, NotFoundException } from "@nestjs/common";
 import { sql } from "kysely";
+import { AuditService } from "../../common/audit/audit.service";
 import { TenantTransactions } from "../../common/database/database.module";
 
 type JsonAmounts = Record<string, string | number>;
@@ -71,7 +72,74 @@ const PAYMENT_KINDS = ["CASH", "PIX", "CARD", "TRANSFER", "CHECK", "OTHER"];
 export class DashboardService {
   private readonly cache = new Map<string, CachedResult>();
 
-  constructor(private readonly transactions: TenantTransactions) {}
+  constructor(private readonly transactions: TenantTransactions, private readonly audit: AuditService) {}
+
+  async updateCard(tenantId: string, userId: string, contributionTypeId: string | null) {
+    return this.transactions.withTenantTx({ tenantId, userId }, async (transaction) => {
+      const current = await sql<{ contribution_type_id: string | null }>`
+        select dashboard_contribution_type_id as contribution_type_id
+          from tenant_settings where tenant_id = ${tenantId}::uuid for update
+      `.execute(transaction);
+      if (!current.rows[0]) throw new NotFoundException({ code: "NOT_FOUND" });
+      if (contributionTypeId) {
+        const type = await sql<{ id: string }>`
+          select id from contribution_types
+           where tenant_id = ${tenantId}::uuid and id = ${contributionTypeId}::uuid and active
+        `.execute(transaction);
+        if (!type.rows[0]) throw new BadRequestException({ code: "INVALID_CONTRIBUTION_TYPE" });
+      }
+      await sql`
+        update tenant_settings set dashboard_contribution_type_id = ${contributionTypeId}::uuid,
+          updated_at = now() where tenant_id = ${tenantId}::uuid
+      `.execute(transaction);
+      await this.audit.record(transaction, {
+        action: "DASHBOARD_CARD_UPDATED", entity: "tenant_settings", entityId: tenantId,
+        before: { contributionTypeId: current.rows[0].contribution_type_id },
+        after: { contributionTypeId },
+      });
+      return { contributionTypeId };
+    });
+  }
+
+  private async getCustomCard(tenantId: string, userId: string) {
+    return this.transactions.withTenantTx({ tenantId, userId }, async (transaction) => {
+      const result = await sql<{
+        contribution_type_id: string | null;
+        contribution_type_name: string | null;
+        total: string | null;
+        contribution_types: { id: string; description: string }[];
+      }>`
+        select ts.dashboard_contribution_type_id as contribution_type_id,
+               selected.description as contribution_type_name,
+               case when selected.id is null then null else (
+                 select coalesce(sum(c.amount), 0.00)::text
+                   from contributions c
+                   join tenants t on t.id = c.tenant_id
+                  where c.tenant_id = ${tenantId}::uuid
+                    and c.contribution_type_id = selected.id
+                    and c.status = 'ACTIVE'
+                    and c.occurred_on <= (now() at time zone t.timezone)::date
+               ) end as total,
+               (select coalesce(jsonb_agg(jsonb_build_object('id', ct.id, 'description', ct.description)
+                                         order by ct.description, ct.id), '[]'::jsonb)
+                  from contribution_types ct
+                 where ct.tenant_id = ts.tenant_id and (ct.active or ct.id = selected.id)
+               ) as contribution_types
+          from tenant_settings ts
+          left join contribution_types selected
+            on selected.tenant_id = ts.tenant_id and selected.id = ts.dashboard_contribution_type_id
+         where ts.tenant_id = ${tenantId}::uuid
+      `.execute(transaction);
+      const row = result.rows[0];
+      if (!row) throw new InternalServerErrorException({ code: "DASHBOARD_CARD_UNAVAILABLE" });
+      return {
+        contributionTypeId: row.contribution_type_id,
+        contributionTypeName: row.contribution_type_name,
+        total: row.total,
+        contributionTypes: row.contribution_types,
+      };
+    });
+  }
 
   async getSummary(tenantId: string, userId: string, canReadPayables: boolean) {
     const summary = await this.cached(
@@ -429,9 +497,11 @@ export class DashboardService {
           };
         }),
     );
-    if (canReadPayables) return summary;
+    const customCard = await this.getCustomCard(tenantId, userId);
+    if (canReadPayables) return { ...summary, customCard };
     return {
       ...summary,
+      customCard,
       payables: { ...summary.payables, overdue: null, next7Days: null },
     };
   }

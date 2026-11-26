@@ -74,7 +74,10 @@ test("cache do resumo não expõe detalhes a quem não tem payables:read", async
   const executor = new Proxy(database.getExecutor(), {
     get(target, property) {
       if (property === "executeQuery") {
-        return async () => {
+        return async (query) => {
+          if (query.sql.includes("dashboard_contribution_type_id")) {
+            return { rows: [{ contribution_type_id: null, contribution_type_name: null, total: null, contribution_types: [] }] };
+          }
           queries++;
           return {
             rows: [{
